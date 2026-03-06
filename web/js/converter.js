@@ -119,32 +119,55 @@ function parseYAML(yaml) {
   // This is a very simplified YAML parser
   const lines = yaml.split("\n");
   const result = {};
-  let currentObject = result;
-  const stack = [{ obj: result, indent: -1 }];
+  const stack = [{ obj: result, indent: -1, key: null, parent: null }];
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
     const indent = line.search(/\S/);
-    const [key, ...valueParts] = trimmed.split(":");
-    const value = valueParts.join(":").trim();
 
+    // Pop from stack if indentation decreases
     while (stack.length > 1 && indent <= stack[stack.length - 1].indent) {
       stack.pop();
     }
-    currentObject = stack[stack.length - 1].obj;
 
-    if (value === "") {
-      // It's a nested object or array start
-      const newObj = {};
-      currentObject[key.trim()] = newObj;
-      stack.push({ obj: newObj, indent: indent });
-    } else if (trimmed.startsWith("-")) {
-      // It's an array item (very basic)
-      // Real YAML parsing is hard, let's try a slightly better approach if possible
+    const currentEntry = stack[stack.length - 1];
+
+    if (trimmed.startsWith("-")) {
+      // Handle array items
+      const value = parseValue(trimmed.substring(1).trim());
+
+      // If current object is not an array, convert it to one
+      if (!Array.isArray(currentEntry.obj)) {
+        const newArr = [];
+        if (currentEntry.parent && currentEntry.key !== null) {
+          currentEntry.parent[currentEntry.key] = newArr;
+        }
+        currentEntry.obj = newArr;
+      }
+
+      if (value !== "" && Array.isArray(currentEntry.obj)) {
+        currentEntry.obj.push(value);
+      }
     } else {
-      currentObject[key.trim()] = parseValue(value);
+      const [key, ...valueParts] = trimmed.split(":");
+      const k = key.trim();
+      const value = valueParts.join(":").trim();
+
+      if (value === "") {
+        // It's a nested object or array start
+        const newObj = {};
+        currentEntry.obj[k] = newObj;
+        stack.push({
+          obj: newObj,
+          indent: indent,
+          key: k,
+          parent: currentEntry.obj,
+        });
+      } else {
+        currentEntry.obj[k] = parseValue(value);
+      }
     }
   }
   return result;
@@ -269,21 +292,35 @@ function stringifyXML(data) {
     for (const [key, value] of Object.entries(obj)) {
       if (key === "@attributes") {
         for (const [attrName, attrValue] of Object.entries(value)) {
-          parent.setAttribute(attrName, attrValue);
+          try {
+            parent.setAttribute(attrName, attrValue);
+          } catch (e) {
+            console.warn(`Invalid XML attribute name: ${attrName}`, e);
+          }
         }
         continue;
       }
 
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          const child = doc.createElement(key);
+      // Ensure key is a valid XML element name
+      let safeKey = key.trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
+      if (!safeKey || /^[^a-zA-Z_]/.test(safeKey)) {
+        safeKey = "item_" + safeKey;
+      }
+
+      try {
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            const child = doc.createElement(safeKey);
+            parent.appendChild(child);
+            buildXML(child, item);
+          }
+        } else {
+          const child = doc.createElement(safeKey);
           parent.appendChild(child);
-          buildXML(child, item);
+          buildXML(child, value);
         }
-      } else {
-        const child = doc.createElement(key);
-        parent.appendChild(child);
-        buildXML(child, value);
+      } catch (e) {
+        console.warn(`Could not create XML element for key: ${key}`, e);
       }
     }
   }
