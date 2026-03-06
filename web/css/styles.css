@@ -72,6 +72,13 @@ header h1 {
   }
 }
 
+.header-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.header-btn,
 .theme-toggle {
   background: none;
   border: 2px solid var(--border-colour);
@@ -84,8 +91,10 @@ header h1 {
   justify-content: center;
   transition: all var(--transition-speed);
   font-size: 1.2rem;
+  text-decoration: none;
 }
 
+.header-btn:hover,
 .theme-toggle:hover {
   background-color: var(--bg-subtle);
   color: var(--accent-colour);
