@@ -325,11 +325,11 @@ function formatXML(xml) {
       indent = indent.substring(tab.length);
     }
     result += indent + "<" + node + ">\n";
-    if (!node.startsWith("/") && !node.endsWith("/") && !node.includes("/>")) {
-      const nextNode = nodes[i + 1];
-      if (nextNode && !nextNode.startsWith("/")) {
-        indent += tab;
-      }
+
+    const isOpeningTag = !node.startsWith("/") && !node.endsWith("/") &&
+      !node.includes(">");
+    if (isOpeningTag) {
+      indent += tab;
     }
   }
   return result.trim();
