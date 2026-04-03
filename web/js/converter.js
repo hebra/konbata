@@ -48,6 +48,17 @@ export function setupConverter() {
   sourceFormat.addEventListener("change", performConversion);
   targetFormat.addEventListener("change", performConversion);
 
+  // Auto-detect format on paste
+  sourceText.addEventListener("paste", (e) => {
+    const text = e.clipboardData?.getData("text");
+    if (text) {
+      const detected = detectFormat(text);
+      if (detected) {
+        sourceFormat.value = detected;
+      }
+    }
+  });
+
   // Button actions
   clearBtn?.addEventListener("click", () => {
     sourceText.value = "";
@@ -59,6 +70,10 @@ export function setupConverter() {
   pasteBtn?.addEventListener("click", async () => {
     const text = await pasteFromClipboard();
     if (text !== null) {
+      const detected = detectFormat(text);
+      if (detected) {
+        sourceFormat.value = detected;
+      }
       sourceText.value = text;
       performConversion();
     }
@@ -67,6 +82,76 @@ export function setupConverter() {
   copyBtn?.addEventListener("click", () => {
     copyToClipboard(targetText.value);
   });
+}
+
+/**
+ * Attempts to detect the format of the input text based on its structure.
+ * @param {string} input - The raw input text.
+ * @returns {string|null} - The detected format or null.
+ */
+export function detectFormat(input) {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // JSON detection: Usually starts with { or [
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === "object" && parsed !== null) return "json";
+    } catch (_) {
+      // Not valid JSON
+    }
+  }
+
+  // XML detection: Usually starts with <
+  if (trimmed.startsWith("<")) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(trimmed, "text/xml");
+      if (!doc.getElementsByTagName("parsererror").length) {
+        return "xml";
+      }
+    } catch (_) {
+      // Not valid XML
+    }
+  }
+
+  // TOML detection: Often has tables [table] or key = "value"
+  if (
+    trimmed.includes("=") || (trimmed.startsWith("[") && trimmed.includes("]"))
+  ) {
+    try {
+      const parsed = parseTOML(trimmed);
+      // Ensure we actually found some data
+      if (Object.keys(parsed).length > 0) return "toml";
+    } catch (_) {
+      // Not valid TOML
+    }
+  }
+
+  // YAML detection: Often has key: value or list items - item
+  if (trimmed.includes(":") || trimmed.startsWith("-")) {
+    try {
+      const parsed = parseYAML(trimmed);
+      // Ensure we actually found some data
+      if (Object.keys(parsed).length > 0) return "yaml";
+    } catch (_) {
+      // Not valid YAML
+    }
+  }
+
+  // Properties detection: Simple key=value pairs
+  if (trimmed.includes("=") || trimmed.includes(":")) {
+    try {
+      const parsed = parseProperties(trimmed);
+      // Ensure we actually found some data
+      if (Object.keys(parsed).length > 0) return "properties";
+    } catch (_) {
+      // Not valid Properties
+    }
+  }
+
+  return null;
 }
 
 /**
