@@ -1,8 +1,8 @@
 # Konbata (Text-Data Converter)
 
 Konbata is a lightweight, client-side web tool designed to convert text-data
-between different formats, specifically JSON, YAML, and XML. It is built with
-vanilla technologies (HTML5, CSS3, ES6+) and aims to provide a fast,
+between different formats: JSON, YAML, XML, Properties, and TOML. It is built
+with vanilla technologies (HTML5, CSS3, ES6+) and aims to provide a fast,
 privacy-focused, and zero-dependency utility for developers.
 
 [![Live Demo](https://img.shields.io/badge/Live-Demo-brightgreen)](https://konbata.yogu.one)
@@ -10,7 +10,8 @@ privacy-focused, and zero-dependency utility for developers.
 
 ## Features
 
-- **Format Conversion**: Instantly convert between JSON, YAML, and XML.
+- **Format Conversion**: Instantly convert between JSON, YAML, XML, Properties
+  (.properties), and TOML.
 - **Privacy-First**: All conversions happen in the browser. No data is sent to a
   server.
 - **Zero-Dependency**: No external JS or CSS frameworks are used.
