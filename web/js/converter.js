@@ -75,7 +75,7 @@ export function setupConverter() {
  * @param {string} format - The format (json, yaml, xml).
  * @returns {any} - The parsed JavaScript object.
  */
-function parseData(input, format) {
+export function parseData(input, format) {
   switch (format) {
     case "json":
       return JSON.parse(input);
@@ -83,6 +83,10 @@ function parseData(input, format) {
       return parseYAML(input);
     case "xml":
       return parseXML(input);
+    case "properties":
+      return parseProperties(input);
+    case "toml":
+      return parseTOML(input);
     default:
       throw new Error("Unsupported format");
   }
@@ -94,7 +98,7 @@ function parseData(input, format) {
  * @param {string} format - The format (json, yaml, xml).
  * @returns {string} - The formatted string.
  */
-function stringifyData(data, format) {
+export function stringifyData(data, format) {
   switch (format) {
     case "json":
       return JSON.stringify(data, null, 2);
@@ -102,6 +106,10 @@ function stringifyData(data, format) {
       return stringifyYAML(data);
     case "xml":
       return stringifyXML(data);
+    case "properties":
+      return stringifyProperties(data);
+    case "toml":
+      return stringifyTOML(data);
     default:
       throw new Error("Unsupported format");
   }
@@ -370,4 +378,303 @@ function formatXML(xml) {
     }
   }
   return result.trim();
+}
+
+// --- Properties Parser ---
+
+/**
+ * Parses Properties string into a JS object.
+ * Handles dotted keys for nested structures.
+ * @param {string} str - The Properties string.
+ * @returns {any}
+ */
+function parseProperties(str) {
+  const result = {};
+  const lines = str.split(/\r?\n/);
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith("#") || line.startsWith("!")) continue;
+
+    const match = line.match(/^(.+?)\s*[=:]\s*(.*)$/);
+    if (!match) continue;
+
+    const key = match[1].trim();
+    let value = match[2].trim();
+
+    // Handle basic escapes
+    value = value
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\r/g, "\r")
+      .replace(
+        /\\u([0-9a-fA-F]{4})/g,
+        (_, hex) => String.fromCharCode(parseInt(hex, 16)),
+      );
+
+    // Unflatten dotted keys
+    const parts = key.split(".");
+    let current = result;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (i === parts.length - 1) {
+        current[part] = parseValue(value);
+      } else {
+        if (!current[part] || typeof current[part] !== "object") {
+          current[part] = {};
+        }
+        current = current[part];
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Stringifies data to Properties.
+ * Flattens nested objects into dotted keys.
+ * @param {any} data - The data to stringify.
+ * @returns {string}
+ */
+function stringifyProperties(data) {
+  const lines = [];
+
+  function flatten(obj, prefix = "") {
+    if (obj === null) {
+      lines.push(`${prefix} = null`);
+      return;
+    }
+    if (typeof obj !== "object") {
+      lines.push(`${prefix} = ${String(obj)}`);
+      return;
+    }
+
+    for (const [key, value] of Object.entries(obj)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key;
+      if (
+        typeof value === "object" && value !== null && !Array.isArray(value)
+      ) {
+        flatten(value, fullKey);
+      } else if (Array.isArray(value)) {
+        value.forEach((item, index) => {
+          flatten(item, `${fullKey}.${index}`);
+        });
+      } else {
+        let valStr = String(value);
+        // Basic escapes for stringifier
+        valStr = valStr
+          .replace(/\n/g, "\\n")
+          .replace(/\t/g, "\\t")
+          .replace(/\r/g, "\\r");
+        lines.push(`${fullKey} = ${valStr}`);
+      }
+    }
+  }
+
+  flatten(data);
+  return lines.join("\n");
+}
+
+// --- TOML Parser ---
+
+/**
+ * Basic TOML parser.
+ * Handles tables, nested keys, and basic types.
+ * @param {string} toml - The TOML string.
+ * @returns {any}
+ */
+function parseTOML(toml) {
+  const result = {};
+  let currentContext = result;
+  const lines = toml.split(/\r?\n/);
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    // Handle Table Array [[table]]
+    if (line.startsWith("[[") && line.endsWith("]]")) {
+      const tableName = line.slice(2, -2).trim();
+      const parts = tableName.split(".");
+      let current = result;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (i === parts.length - 1) {
+          if (!Array.isArray(current[part])) {
+            current[part] = [];
+          }
+          const newObj = {};
+          current[part].push(newObj);
+          currentContext = newObj;
+        } else {
+          if (!current[part]) current[part] = {};
+          current = current[part];
+        }
+      }
+      continue;
+    }
+
+    // Handle Table [table]
+    if (line.startsWith("[") && line.endsWith("]")) {
+      const tableName = line.slice(1, -1).trim();
+      const parts = tableName.split(".");
+      let current = result;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (i === parts.length - 1) {
+          if (!current[part] || typeof current[part] !== "object") {
+            current[part] = {};
+          }
+          currentContext = current[part];
+        } else {
+          if (!current[part]) current[part] = {};
+          current = current[part];
+        }
+      }
+      continue;
+    }
+
+    // Handle key = value
+    const match = line.match(/^(.+?)\s*=\s*(.*)$/);
+    if (match) {
+      const key = match[1].trim();
+      const valueStr = match[2].trim();
+
+      // Basic value parsing
+      let value;
+      if (valueStr.startsWith('"') && valueStr.endsWith('"')) {
+        value = valueStr.slice(1, -1).replace(/\\"/g, '"').replace(
+          /\\\\/g,
+          "\\",
+        );
+      } else if (valueStr.startsWith("'") && valueStr.endsWith("'")) {
+        value = valueStr.slice(1, -1);
+      } else if (valueStr === "true") {
+        value = true;
+      } else if (valueStr === "false") {
+        value = false;
+      } else if (!isNaN(valueStr) && valueStr !== "") {
+        value = Number(valueStr);
+      } else if (valueStr.startsWith("[") && valueStr.endsWith("]")) {
+        // Basic array parsing
+        value = valueStr.slice(1, -1).split(",")
+          .map((v) => v.trim())
+          .filter((v) => v !== "")
+          .map((v) => parseValue(v));
+      } else {
+        value = valueStr;
+      }
+
+      // Handle dotted keys within the context
+      const keyParts = key.split(".");
+      let target = currentContext;
+      for (let i = 0; i < keyParts.length; i++) {
+        const part = keyParts[i];
+        if (i === keyParts.length - 1) {
+          target[part] = value;
+        } else {
+          if (!target[part]) target[part] = {};
+          target = target[part];
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Basic TOML stringifier.
+ * @param {any} data - The data to stringify.
+ * @returns {string}
+ */
+function stringifyTOML(data) {
+  let output = "";
+
+  function isObject(val) {
+    return typeof val === "object" && val !== null && !Array.isArray(val);
+  }
+
+  function formatValue(val) {
+    if (typeof val === "string") {
+      return `"${val.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    }
+    if (typeof val === "boolean") return String(val);
+    if (typeof val === "number") return String(val);
+    if (Array.isArray(val)) {
+      if (val.length > 0 && isObject(val[0])) return null; // Array of tables
+      return `[ ${val.map(formatValue).join(", ")} ]`;
+    }
+    return String(val);
+  }
+
+  // Root level key-values
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      !isObject(value) &&
+      !(Array.isArray(value) && value.length > 0 && isObject(value[0]))
+    ) {
+      output += `${key} = ${formatValue(value)}\n`;
+    }
+  }
+
+  // Sections
+  function writeSection(obj, prefix = "") {
+    for (const [key, value] of Object.entries(obj)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key;
+
+      if (Array.isArray(value) && value.length > 0 && isObject(value[0])) {
+        // Array of tables
+        for (const item of value) {
+          output += `\n[[${fullKey}]]\n`;
+          // Non-object properties
+          for (const [k, v] of Object.entries(item)) {
+            if (
+              !isObject(v) &&
+              !(Array.isArray(v) && v.length > 0 && isObject(v[0]))
+            ) {
+              output += `${k} = ${formatValue(v)}\n`;
+            }
+          }
+          // Nested sections
+          const nested = Object.fromEntries(
+            Object.entries(item).filter(([_, v]) =>
+              isObject(v) ||
+              (Array.isArray(v) && v.length > 0 && isObject(v[0]))
+            ),
+          );
+          writeSection(nested, fullKey);
+        }
+      } else if (isObject(value)) {
+        output += `\n[${fullKey}]\n`;
+        // Non-object properties
+        for (const [k, v] of Object.entries(value)) {
+          if (
+            !isObject(v) &&
+            !(Array.isArray(v) && v.length > 0 && isObject(v[0]))
+          ) {
+            const formatted = formatValue(v);
+            if (formatted !== null) {
+              output += `${k} = ${formatted}\n`;
+            }
+          }
+        }
+        // Nested sections
+        const nested = Object.fromEntries(
+          Object.entries(value).filter(([_, v]) =>
+            isObject(v) || (Array.isArray(v) && v.length > 0 && isObject(v[0]))
+          ),
+        );
+        writeSection(nested, fullKey);
+      }
+    }
+  }
+
+  const sections = Object.fromEntries(
+    Object.entries(data).filter(([_, v]) =>
+      isObject(v) || (Array.isArray(v) && v.length > 0 && isObject(v[0]))
+    ),
+  );
+  writeSection(sections);
+
+  return output.trim();
 }
