@@ -18,6 +18,17 @@ export function setupConverter() {
 
   if (!sourceText || !targetText || !sourceFormat || !targetFormat) return;
 
+  // Load saved formats from local storage
+  const savedSourceFormat = localStorage.getItem("source-format");
+  const savedTargetFormat = localStorage.getItem("target-format");
+
+  if (savedSourceFormat) {
+    sourceFormat.value = savedSourceFormat;
+  }
+  if (savedTargetFormat) {
+    targetFormat.value = savedTargetFormat;
+  }
+
   /**
    * Performs the conversion from source to target.
    */
@@ -45,8 +56,14 @@ export function setupConverter() {
 
   // Event listeners for real-time sync
   sourceText.addEventListener("input", performConversion);
-  sourceFormat.addEventListener("change", performConversion);
-  targetFormat.addEventListener("change", performConversion);
+  sourceFormat.addEventListener("change", () => {
+    localStorage.setItem("source-format", sourceFormat.value);
+    performConversion();
+  });
+  targetFormat.addEventListener("change", () => {
+    localStorage.setItem("target-format", targetFormat.value);
+    performConversion();
+  });
 
   // Auto-detect format on paste
   sourceText.addEventListener("paste", (e) => {
@@ -55,6 +72,7 @@ export function setupConverter() {
       const detected = detectFormat(text);
       if (detected) {
         sourceFormat.value = detected;
+        localStorage.setItem("source-format", detected);
       }
     }
   });
@@ -73,6 +91,7 @@ export function setupConverter() {
       const detected = detectFormat(text);
       if (detected) {
         sourceFormat.value = detected;
+        localStorage.setItem("source-format", detected);
       }
       sourceText.value = text;
       performConversion();
@@ -82,6 +101,9 @@ export function setupConverter() {
   copyBtn?.addEventListener("click", () => {
     copyToClipboard(targetText.value);
   });
+
+  // Perform initial conversion if there's any content
+  performConversion();
 }
 
 /**
